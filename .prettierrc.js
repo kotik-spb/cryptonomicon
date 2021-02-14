@@ -1,4 +1,4 @@
 module.exports = {
-    trailingComma: false,
+    trailingComma: "none",
     tabSize: 4
 }
