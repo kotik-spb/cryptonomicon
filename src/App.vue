@@ -3,6 +3,32 @@
     id="app"
     class="container mx-auto flex flex-col items-center bg-gray-100 p-4"
   >
+    <div
+      v-if="!coinsList.length"
+      class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center"
+    >
+      <svg
+        class="animate-spin -ml-1 mr-3 h-12 w-12 text-white"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          class="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          stroke-width="4"
+        ></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+    </div>
+
     <div class="container">
       <div class="w-full my-4"></div>
       <section>
@@ -16,11 +42,28 @@
                 type="text"
                 name="wallet"
                 v-model="ticker"
+                @input="makeSuggestion"
                 @keydown.enter="addTicker"
                 id="wallet"
                 class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
                 placeholder="Например DOGE"
               />
+            </div>
+            <div
+              v-if="suggestCoins.length"
+              class="flex bg-white shadow-md p-1 rounded-md flex-wrap"
+            >
+              <span
+                v-for="suggest in suggestCoins"
+                :key="suggest"
+                @click.stop="addTickerToInput($event)"
+                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
+              >
+                {{ suggest }}
+              </span>
+            </div>
+            <div v-if="isTickerAddedError" class="text-sm text-red-600">
+              Такой тикер уже добавлен
             </div>
           </div>
         </div>
@@ -138,6 +181,9 @@ export default {
   name: "App",
   data() {
     return {
+      coinsList: [],
+      suggestCoins: [],
+      isTickerAddedError: false,
       ticker: "",
       tickers: [],
       sel: null,
@@ -145,11 +191,20 @@ export default {
     };
   },
   methods: {
+    addTickerToInput({ target }) {
+      this.ticker = target.innerText;
+      this.addTicker();
+    },
     addTicker() {
       const currentTicker = {
         name: this.ticker,
         price: "-"
       };
+
+      if (this.checkExistingTickers()) {
+        return;
+      }
+
       this.tickers.push(currentTicker);
 
       setInterval(async () => {
@@ -168,8 +223,37 @@ export default {
       }, 5000);
 
       this.ticker = "";
+      this.suggestCoins = [];
     },
 
+    checkExistingTickers() {
+      if (
+        this.tickers.find(
+          el => el.name.toLowerCase() === this.ticker.toLowerCase()
+        )
+      ) {
+        this.isTickerAddedError = true;
+        return true;
+      }
+      this.isTickerAddedError = false;
+      return false;
+    },
+    makeSuggestion() {
+      this.isTickerAddedError = false;
+      if (!this.ticker) {
+        this.suggestCoins = [];
+        return;
+      }
+      let filteredCoins = this.coinsList.filter(coin => {
+        return coin.toLowerCase().startsWith(this.ticker.toLowerCase());
+      });
+      filteredCoins.sort((a, b) => a.length - b.length);
+
+      if (filteredCoins.length > 4) {
+        filteredCoins = filteredCoins.slice(0, 4);
+      }
+      this.suggestCoins = filteredCoins;
+    },
     removeTicker(ticker) {
       this.tickers = this.tickers.filter(t => t !== ticker);
     },
@@ -186,6 +270,22 @@ export default {
       this.sel = ticker;
       this.graph = [];
     }
+  },
+  async created() {
+    const allCoins = await fetch(
+      "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
+    )
+      .then(data => data.json())
+      .then(({ Data: data }) => {
+        const coinsSymbols = [];
+        for (let key in data) {
+          coinsSymbols.push(data[key].Symbol);
+        }
+        return coinsSymbols;
+      })
+      .catch(e => console.log(e));
+
+    this.coinsList = allCoins;
   }
 };
 </script>
