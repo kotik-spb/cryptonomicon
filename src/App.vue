@@ -108,17 +108,17 @@
           </button>
           <div>
             Фильтр:
-            <input v-model.trim="filter" />
+            <input v-model.trim="filter" @input="page = 1" />
           </div>
         </div>
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in filteredTickers()"
+            v-for="t in paginatedTickers"
             :key="t.name"
             @click="select(t)"
             :class="{
-              'border-4': sel === t
+              'border-4': selectedTicker === t
             }"
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
@@ -152,20 +152,20 @@
           </div>
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
-        <section v-if="sel" class="relative">
+        <section v-if="selectedTicker" class="relative">
           <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-            {{ sel.name }} - USD
+            {{ selectedTicker.name }} - USD
           </h3>
           <div class="flex items-end border-gray-600 border-b border-l h-64">
             <div
-              v-for="(bar, idx) in normalizeGraph()"
+              v-for="(bar, idx) in normalizedGraph"
               :key="idx"
               :style="{ height: bar + '%' }"
               class="bg-purple-800 border w-10"
             ></div>
           </div>
           <button
-            @click="sel = null"
+            @click="selectedTicker = null"
             type="button"
             class="absolute top-0 right-0"
           >
@@ -198,6 +198,25 @@
 </template>
 
 <script>
+/*
+  Написать критерии, по которым произведены оценки:
+
+  [x] 6. Наличие в состоянии зависимых данных (5+)
+  [ ] 2. При удалении остается подписка на загрузку курсов (5)
+  [ ] 3. Количество запросов (5)
+  [ ] 4. Запросы напрямую внутри компонента (5)
+  [x] 8. При удалении тикера не изменяется localStorage (4)
+  [x] 1. Одинаковый код в watch (3) 
+  [ ] 9. localStorage и анонимные вкладки (3)
+  [ ] 5. Обработка ошибок API (2)
+  [ ] 7. График ужасно выглядит, если будет много цен (2)
+  [ ] 10. Магические числа (URL, задержка 5000ms, ключ localStorage, количество отображения на странице) (1)
+
+  Параллельно 
+  [x] График сломан, если везде одинаковые значения
+  [x] При удалении тикера остается выбор
+
+*/
 export default {
   name: "App",
   data() {
@@ -206,28 +225,61 @@ export default {
       suggestCoins: [],
       isTickerAddedError: false,
       ticker: "",
-      tickers: [],
-      sel: null,
-      graph: [],
       filter: "",
+
+      tickers: [],
+      selectedTicker: null,
+
+      graph: [],
+
       page: 1,
-      recordsPerPage: 6,
-      hasNextPage: false
+      recordsPerPage: 6
     };
   },
-  methods: {
-    filteredTickers() {
-      const start = (this.page - 1) * this.recordsPerPage;
-      const end = this.page * this.recordsPerPage;
+  computed: {
+    startIndex() {
+      return (this.page - 1) * 6;
+    },
 
-      const filteredTickers = this.tickers.filter(tkr =>
+    endIndex() {
+      return this.page * 6;
+    },
+
+    filteredTickers() {
+      return this.tickers.filter(tkr =>
         tkr.name.toLowerCase().includes(this.filter.toLowerCase())
       );
-
-      this.hasNextPage = filteredTickers.length > end;
-
-      return filteredTickers.slice(start, end);
     },
+
+    paginatedTickers() {
+      return this.filteredTickers.slice(this.startIndex, this.endIndex);
+    },
+
+    hasNextPage() {
+      return this.filteredTickers.length > this.endIndex;
+    },
+
+    normalizedGraph() {
+      const maxValue = Math.max(...this.graph);
+      const minValue = Math.min(...this.graph);
+
+      if (maxValue === minValue) {
+        return this.graph.map(() => 50);
+      }
+
+      return this.graph.map(price => {
+        return 5 + ((price - minValue) * 95) / (maxValue - minValue);
+      });
+    },
+
+    pageStateOptions() {
+      return {
+        filter: this.fitler,
+        page: this.page
+      };
+    }
+  },
+  methods: {
     subscribeToUpdates(tickerName) {
       // setInterval(async () => {
       //   const f = await fetch(
@@ -239,7 +291,7 @@ export default {
       //   this.tickers.find(t => t.name === tickerName).price =
       //     data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 
-      //   if (this.sel?.name === tickerName) {
+      //   if (this.selectedTicker?.name === tickerName) {
       //     this.graph.push(data.USD);
       //   }
       // }, 5000);
@@ -260,9 +312,7 @@ export default {
         return;
       }
 
-      this.tickers.push(currentTicker);
-
-      localStorage.setItem("crypton", JSON.stringify(this.tickers));
+      this.tickers = [...this.tickers, currentTicker];
 
       this.subscribeToUpdates(currentTicker.name);
       this.filter = "";
@@ -296,38 +346,42 @@ export default {
       }
       this.suggestCoins = filteredCoins;
     },
-    removeTicker(ticker) {
-      this.tickers = this.tickers.filter(t => t !== ticker);
-    },
 
-    normalizeGraph() {
-      const maxValue = Math.max(...this.graph);
-      const minValue = Math.min(...this.graph);
-      return this.graph.map(price => {
-        return 5 + ((price - minValue) * 95) / (maxValue - minValue);
-      });
+    removeTicker(tickerToRemove) {
+      this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+      if (this.selectedTicker === tickerToRemove) {
+        this.selectedTicker = null;
+      }
     },
 
     select(ticker) {
-      this.sel = ticker;
-      this.graph = [];
+      this.selectedTicker = ticker;
     }
   },
   watch: {
+    selectedTicker() {
+      this.graph = [];
+    },
+
+    tickers(newValue, oldValue) {
+      localStorage.setItem("crypton", JSON.stringify(this.tickers));
+    },
+
+    paginatedTickers() {
+      if (this.paginatedTickers.length === 0 && this.page > 1) {
+        this.page--;
+      }
+    },
+
     filter() {
       this.page = 1;
-
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
-      );
     },
-    page() {
+
+    pageStateOptions(newVal) {
       window.history.pushState(
         null,
         document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+        `${window.location.pathname}?filter=${newVal.filter}&page=${newVal.page}`
       );
     }
   },
@@ -336,13 +390,21 @@ export default {
       new URL(window.location).searchParams.entries()
     );
 
-    if (windowData.filter) {
-      this.fitler = windowData.filter;
-    }
+    const VALID_KEYS = ["filter", "key"];
 
-    if (windowData.page) {
-      this.page = windowData.page;
-    }
+    VALID_KEYS.forEach(key => {
+      if (windowData[key]) {
+        this[key] = windowData[key];
+      }
+    });
+
+    // if (windowData.filter) {
+    //   this.fitler = windowData.filter;
+    // }
+
+    // if (windowData.page) {
+    //   this.page = windowData.page;
+    // }
 
     const allCoins = await fetch(
       "https://min-api.cryptocompare.com/data/all/coinlist?summary=true"
