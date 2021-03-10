@@ -127,7 +127,7 @@
                 {{ t.name }}
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -217,6 +217,8 @@
   [x] При удалении тикера остается выбор
 
 */
+import { subscribeToTicker, unsubscribeFromTicker } from "./api";
+
 export default {
   name: "App",
   data() {
@@ -280,28 +282,24 @@ export default {
     }
   },
   methods: {
-    subscribeToUpdates(tickerName) {
-      // setInterval(async () => {
-      //   const f = await fetch(
-      //     `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=9c60c6d2022f78e67710e55f58b688115870d7cad053780af466b8614e2efb8b`
-      //   );
-      //   const data = await f.json();
-      //   console.log(data.USD);
-
-      //   this.tickers.find(t => t.name === tickerName).price =
-      //     data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-      //   if (this.selectedTicker?.name === tickerName) {
-      //     this.graph.push(data.USD);
-      //   }
-      // }, 5000);
-      this.ticker = "";
-      this.suggestCoins = [];
+    formatPrice(price) {
+      if (price === "-") return "-";
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
     },
+
+    updateTicker(tickerName, price) {
+      this.tickers
+        .filter(t => t.name === tickerName)
+        .forEach(t => {
+          t.price = price;
+        });
+    },
+
     addTickerToInput({ target }) {
       this.ticker = target.innerText;
       this.addTicker();
     },
+
     addTicker() {
       const currentTicker = {
         name: this.ticker.toUpperCase(),
@@ -313,9 +311,12 @@ export default {
       }
 
       this.tickers = [...this.tickers, currentTicker];
-
-      this.subscribeToUpdates(currentTicker.name);
       this.filter = "";
+      subscribeToTicker(currentTicker.name, newPrice => {
+        this.updateTicker(currentTicker.name, newPrice);
+      });
+
+      this.updateTickers();
     },
 
     checkExistingTickers() {
@@ -330,6 +331,7 @@ export default {
       this.isTickerAddedError = false;
       return false;
     },
+
     makeSuggestion() {
       this.isTickerAddedError = false;
       if (!this.ticker) {
@@ -352,6 +354,8 @@ export default {
       if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null;
       }
+
+      unsubscribeFromTicker(tickerToRemove.name);
     },
 
     select(ticker) {
@@ -422,11 +426,17 @@ export default {
     this.coinsList = allCoins;
 
     const tickersData = localStorage.getItem("crypton");
+
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach(ticker => {
+        subscribeToTicker(ticker.name, newPrice => {
+          this.updateTicker(ticker.name, newPrice);
+        });
+      });
     }
 
-    this.tickers.forEach(ticker => this.subscribeToUpdates(ticker.name));
+    setInterval(this.updateTickers, 5000);
   }
 };
 </script>
